@@ -19,7 +19,10 @@ import {
   Loader2,
   Globe,
   Check,
-  Clock
+  Clock,
+  Download,
+  Sun,
+  ShieldAlert
 } from 'lucide-react';
 import { TRANSLATIONS } from './translations';
 
@@ -42,11 +45,15 @@ const App = () => {
   const [isSetupOpen, setIsSetupOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
+  const [wakeLockSupported, setWakeLockSupported] = useState<boolean>('wakeLock' in navigator);
 
   const t = TRANSLATIONS[lang];
   const timerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wakeLockRef = useRef<any>(null);
 
+  // Persistence Loading
   useEffect(() => {
     const savedLang = localStorage.getItem(STORAGE_KEYS.LANG) as 'cs' | 'en';
     const savedText = localStorage.getItem(STORAGE_KEYS.TEXT);
@@ -68,11 +75,62 @@ const App = () => {
     }
   }, []);
 
+  // Persistence Saving
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.LANG, lang); }, [lang]);
   useEffect(() => { if (text) localStorage.setItem(STORAGE_KEYS.TEXT, text); }, [text]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.INDEX, currentIndex.toString()); }, [currentIndex]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.WPM, wpm.toString()); }, [wpm]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FONT_SIZE, fontSize.toString()); }, [fontSize]);
+
+  // Dedicated Wake Lock Functions for direct call on User Interaction
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        setIsWakeLockActive(true);
+        wakeLockRef.current.addEventListener('release', () => {
+          setIsWakeLockActive(false);
+          wakeLockRef.current = null;
+        });
+      } catch (err) {
+        console.warn(`Wake Lock request failed: ${err}`);
+        setIsWakeLockActive(false);
+      }
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+      } catch(e) {}
+      wakeLockRef.current = null;
+      setIsWakeLockActive(false);
+    }
+  };
+
+  // Handle Play Toggle with explicit Wake Lock request
+  const togglePlay = async () => {
+    const nextState = !isPlaying;
+    setIsPlaying(nextState);
+    
+    if (nextState) {
+      await requestWakeLock();
+    } else {
+      await releaseWakeLock();
+    }
+  };
+
+  // Visibility handling remains for background/foreground switching
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && isPlaying) {
+        await requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isPlaying]);
 
   const words = useMemo(() => {
     return text.split(/\s+/).filter(w => w.length > 0);
@@ -81,14 +139,17 @@ const App = () => {
   const estimatedTimeRemaining = useMemo(() => {
     const wordsLeft = Math.max(0, words.length - currentIndex);
     const totalSeconds = (wordsLeft / wpm) * 60;
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = Math.floor(totalSeconds % 60);
     
+    if (hours > 0) return `${hours}h ${minutes}m`;
     if (minutes === 0 && seconds === 0) return "0s";
     if (minutes === 0) return `${seconds}s`;
     return `${minutes}m ${seconds}s`;
   }, [words.length, currentIndex, wpm]);
 
+  // RSVP Engine
   useEffect(() => {
     if (isPlaying && currentIndex < words.length) {
       const msPerWord = (60 / wpm) * 1000;
@@ -108,6 +169,7 @@ const App = () => {
       }, delay);
     } else if (currentIndex >= words.length && words.length > 0) {
       setIsPlaying(false);
+      releaseWakeLock();
     }
 
     return () => {
@@ -115,23 +177,26 @@ const App = () => {
     };
   }, [isPlaying, currentIndex, wpm, words]);
 
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isSetupOpen) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        setIsPlaying(prev => !prev);
+        togglePlay();
       } else if (e.code === 'ArrowLeft') {
         setCurrentIndex(prev => Math.max(0, prev - 1));
         setIsPlaying(false);
+        releaseWakeLock();
       } else if (e.code === 'ArrowRight') {
         setCurrentIndex(prev => Math.min(words.length - 1, prev + 1));
         setIsPlaying(false);
+        releaseWakeLock();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSetupOpen, words.length]);
+  }, [isSetupOpen, words.length, isPlaying]);
 
   const decodeBuffer = (buffer: ArrayBuffer): string => {
     const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
@@ -178,7 +243,7 @@ const App = () => {
         const htmlFile = await zip.file(fullHref)?.async("string");
         if (htmlFile) {
           const htmlDoc = parser.parseFromString(htmlFile, "text/html");
-          htmlDoc.querySelectorAll("script, style, head").forEach(el => el.remove());
+          htmlDoc.querySelectorAll("script, style, head, nav").forEach(el => el.remove());
           fullText += " " + (htmlDoc.body.innerText || htmlDoc.body.textContent || "");
         }
       }
@@ -198,23 +263,54 @@ const App = () => {
 
       if (file.name.toLowerCase().endsWith('.epub')) {
         extractedText = await parseEpub(buffer);
+      } else if (file.name.toLowerCase().endsWith('.json')) {
+        const jsonContent = JSON.parse(decodeBuffer(buffer));
+        if (jsonContent.type === 'swiftread_backup') {
+          setText(jsonContent.text);
+          setTempText(jsonContent.text);
+          setCurrentIndex(jsonContent.currentIndex);
+          setWpm(jsonContent.wpm);
+          setFontSize(jsonContent.fontSize);
+          setIsProcessing(false);
+          setIsSetupOpen(false);
+          return;
+        } else {
+          throw new Error("Invalid format");
+        }
       } else {
         extractedText = decodeBuffer(buffer);
       }
 
-      if (!extractedText.trim()) {
-        throw new Error("Text is empty");
-      }
-
+      if (!extractedText.trim()) throw new Error("Empty text");
       setTempText(extractedText);
     } catch (err) {
-      console.error(err);
       setErrorMsg(t.errorFile);
       setTimeout(() => setErrorMsg(null), 5000);
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleExport = () => {
+    const backupData = {
+      type: 'swiftread_backup',
+      version: 3,
+      text: text,
+      currentIndex: currentIndex,
+      wpm: wpm,
+      fontSize: fontSize,
+      timestamp: Date.now()
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `swiftread_progress_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handlePaste = async () => {
@@ -241,6 +337,7 @@ const App = () => {
       setText(tempText);
       setIsSetupOpen(false);
       setIsPlaying(false);
+      releaseWakeLock();
     }
   };
 
@@ -283,6 +380,12 @@ const App = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isWakeLockActive && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded-xl animate-pulse" title={t.wakeLockActive}>
+              <Sun size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-tight hidden sm:inline">{t.wakeLockActive}</span>
+            </div>
+          )}
           <button 
             onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')}
             className="p-2 hover:bg-slate-800 rounded-xl transition-all flex items-center gap-2 text-xs text-slate-400 border border-slate-800"
@@ -291,7 +394,7 @@ const App = () => {
             <span className="uppercase font-bold">{lang}</span>
           </button>
           <button 
-            onClick={() => { setTempText(text); setIsSetupOpen(true); setIsPlaying(false); }}
+            onClick={() => { setTempText(text); setIsSetupOpen(true); setIsPlaying(false); releaseWakeLock(); }}
             className="px-4 py-2 hover:bg-slate-800 rounded-xl transition-all flex items-center gap-2 text-sm text-slate-300 border border-transparent hover:border-slate-700"
           >
             <Settings size={18} />
@@ -334,7 +437,7 @@ const App = () => {
               <div className="flex flex-col items-center space-y-1">
                  <div className="flex items-center gap-2 text-rose-400 bg-rose-500/10 px-3 py-1 rounded-full border border-rose-500/20">
                     <Clock size={12} />
-                    <span className="text-[10px] font-bold font-mono uppercase tracking-tight">{t.timeFinish}: {estimatedTimeRemaining}</span>
+                    <span className="text-[10px] font-bold font-mono uppercase tracking-tight whitespace-nowrap">{t.timeFinish}: {estimatedTimeRemaining}</span>
                  </div>
               </div>
 
@@ -363,7 +466,7 @@ const App = () => {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-8 bg-slate-900/20 p-6 rounded-[2rem] border border-slate-800/30">
             <div className="flex items-center gap-4">
               <button 
-                onClick={() => { setCurrentIndex(0); setIsPlaying(false); }}
+                onClick={() => { setCurrentIndex(0); setIsPlaying(false); releaseWakeLock(); }}
                 className="p-3 bg-slate-900 hover:bg-slate-800 rounded-2xl border border-slate-800 transition-all text-slate-400 hover:text-white"
                 title={t.reset}
               >
@@ -371,19 +474,19 @@ const App = () => {
               </button>
               <div className="flex items-center bg-slate-900 rounded-2xl border border-slate-800 p-1">
                 <button 
-                  onClick={() => { setCurrentIndex(prev => Math.max(0, prev - 1)); setIsPlaying(false); }}
+                  onClick={() => { setCurrentIndex(prev => Math.max(0, prev - 1)); setIsPlaying(false); releaseWakeLock(); }}
                   className="p-3 hover:bg-slate-800 rounded-xl transition-all text-slate-400 hover:text-white"
                 >
                   <ChevronLeft size={24} />
                 </button>
                 <button 
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={togglePlay}
                   className="w-16 h-12 flex items-center justify-center bg-rose-500 hover:bg-rose-400 rounded-xl shadow-lg shadow-rose-900/20 transition-all group"
                 >
                   {isPlaying ? <Pause size={24} className="fill-white" /> : <Play size={24} className="ml-1 fill-white" />}
                 </button>
                 <button 
-                  onClick={() => { setCurrentIndex(prev => Math.min(words.length - 1, prev + 1)); setIsPlaying(false); }}
+                  onClick={() => { setCurrentIndex(prev => Math.min(words.length - 1, prev + 1)); setIsPlaying(false); releaseWakeLock(); }}
                   className="p-3 hover:bg-slate-800 rounded-xl transition-all text-slate-400 hover:text-white"
                 >
                   <ChevronRight size={24} />
@@ -422,9 +525,9 @@ const App = () => {
 
       {/* Setup Modal */}
       {isSetupOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <header className="p-6 sm:p-8 flex justify-between items-center border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300 overflow-y-auto">
+          <div className="my-auto w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <header className="p-6 sm:p-8 flex justify-between items-center border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-4">
                 <div className="p-2.5 bg-slate-800 rounded-2xl text-rose-500">
                   <Settings size={20} />
@@ -483,7 +586,7 @@ const App = () => {
                   >
                     <input 
                       type="file" ref={fileInputRef} onChange={handleFileUpload}
-                      className="hidden" accept=".txt,.epub"
+                      className="hidden" accept=".txt,.epub,.json"
                     />
                     {isProcessing ? (
                       <Loader2 size={32} className="text-rose-500 animate-spin mb-4" />
@@ -507,14 +610,45 @@ const App = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Wake Lock Status Indicator in Settings */}
+                <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Sun size={18} className={wakeLockSupported ? "text-yellow-500" : "text-slate-500"} />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold uppercase tracking-tight">Prevence spánku</span>
+                      <span className="text-[10px] text-slate-500">Wake Lock API Status</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {wakeLockSupported ? (
+                      <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg border border-emerald-500/20">
+                        <Check size={12} />
+                        <span className="text-[10px] font-bold uppercase">Podporováno</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-2 py-1 bg-rose-500/10 text-rose-500 rounded-lg border border-rose-500/20">
+                        <ShieldAlert size={12} />
+                        <span className="text-[10px] font-bold uppercase">Nepodporováno</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <footer className="p-6 sm:p-8 border-t border-slate-800 bg-slate-900/50">
+            <footer className="p-6 sm:p-8 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row gap-4 shrink-0">
+              <button 
+                onClick={handleExport}
+                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all text-slate-300 group border border-slate-700"
+              >
+                <Download size={20} className="group-hover:translate-y-0.5 transition-transform" />
+                {t.export}
+              </button>
               <button 
                 onClick={handleApplyText}
                 disabled={!tempText.trim() || isProcessing}
-                className="w-full py-4 bg-rose-500 hover:bg-rose-400 disabled:opacity-50 disabled:hover:bg-rose-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-900/20 transition-all text-white group"
+                className="flex-[2] py-4 bg-rose-500 hover:bg-rose-400 disabled:opacity-50 disabled:hover:bg-rose-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-900/20 transition-all text-white group"
               >
                 {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}
                 {t.confirm}
