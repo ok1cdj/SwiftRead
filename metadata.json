@@ -1,5 +1,7 @@
 {
   "name": "SwiftRead Pro",
   "description": "A high-performance speed reading application featuring RSVP (Rapid Serial Visual Presentation), persistent reading state, and adjustable speeds starting from 50 WPM.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "clipboard-read"
+  ]
 }

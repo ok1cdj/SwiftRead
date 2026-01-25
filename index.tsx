@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import JSZip from 'jszip';
 import { 
   Play, 
   Pause, 
@@ -22,9 +21,12 @@ import {
   Clock,
   Download,
   Sun,
-  ShieldAlert
+  ShieldAlert,
+  Hash,
+  ArrowRight
 } from 'lucide-react';
 import { TRANSLATIONS } from './translations';
+import { decodeBuffer, parseEpub, parseMobi, parseMobiZip } from './parsers';
 
 const STORAGE_KEYS = {
   TEXT: 'swiftread_text_v3',
@@ -47,6 +49,7 @@ const App = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
   const [wakeLockSupported, setWakeLockSupported] = useState<boolean>('wakeLock' in navigator);
+  const [jumpInputValue, setJumpInputValue] = useState<string>('');
 
   const t = TRANSLATIONS[lang];
   const timerRef = useRef<number | null>(null);
@@ -82,7 +85,6 @@ const App = () => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.WPM, wpm.toString()); }, [wpm]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FONT_SIZE, fontSize.toString()); }, [fontSize]);
 
-  // Dedicated Wake Lock Functions for direct call on User Interaction
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
       try {
@@ -109,7 +111,6 @@ const App = () => {
     }
   };
 
-  // Handle Play Toggle with explicit Wake Lock request
   const togglePlay = async () => {
     const nextState = !isPlaying;
     setIsPlaying(nextState);
@@ -121,7 +122,6 @@ const App = () => {
     }
   };
 
-  // Visibility handling remains for background/foreground switching
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible' && isPlaying) {
@@ -133,7 +133,9 @@ const App = () => {
   }, [isPlaying]);
 
   const words = useMemo(() => {
-    return text.split(/\s+/).filter(w => w.length > 0);
+    // Rozdělení textu a ošetření "slovo.slovo"
+    const processedText = text.replace(/([\p{L}\p{N}])\.([\p{L}\p{N}])/gu, '$1. $2');
+    return processedText.split(/\s+/).filter(w => w.length > 0);
   }, [text]);
 
   const estimatedTimeRemaining = useMemo(() => {
@@ -198,57 +200,16 @@ const App = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSetupOpen, words.length, isPlaying]);
 
-  const decodeBuffer = (buffer: ArrayBuffer): string => {
-    const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
-    try {
-      return utf8Decoder.decode(buffer);
-    } catch (e) {
-      const cp1250Decoder = new TextDecoder('windows-1250');
-      return cp1250Decoder.decode(buffer);
+  const handleJump = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const val = parseInt(jumpInputValue, 10);
+    if (!isNaN(val)) {
+      const targetIndex = Math.max(0, Math.min(words.length - 1, val));
+      setCurrentIndex(targetIndex);
+      setIsPlaying(false);
+      releaseWakeLock();
+      setJumpInputValue('');
     }
-  };
-
-  const parseEpub = async (data: ArrayBuffer): Promise<string> => {
-    const zip = await JSZip.loadAsync(data);
-    const containerXml = await zip.file("META-INF/container.xml")?.async("string");
-    if (!containerXml) throw new Error("Missing container.xml");
-
-    const parser = new DOMParser();
-    const containerDoc = parser.parseFromString(containerXml, "text/xml");
-    const rootfile = containerDoc.querySelector("rootfile");
-    const opfPath = rootfile?.getAttribute("full-path");
-    if (!opfPath) throw new Error("Missing OPF path");
-
-    const opfXml = await zip.file(opfPath)?.async("string");
-    if (!opfXml) throw new Error("Missing OPF file");
-
-    const opfDoc = parser.parseFromString(opfXml, "text/xml");
-    const manifestItems: Record<string, string> = {};
-    const items = opfDoc.querySelectorAll("item");
-    items.forEach(item => {
-      const id = item.getAttribute("id");
-      const href = item.getAttribute("href");
-      if (id && href) manifestItems[id] = href;
-    });
-
-    const spine = opfDoc.querySelectorAll("spine > itemref");
-    let fullText = "";
-    const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
-
-    for (let i = 0; i < spine.length; i++) {
-      const idref = spine[i].getAttribute("idref");
-      const href = idref ? manifestItems[idref] : null;
-      if (href) {
-        const fullHref = opfDir + href;
-        const htmlFile = await zip.file(fullHref)?.async("string");
-        if (htmlFile) {
-          const htmlDoc = parser.parseFromString(htmlFile, "text/html");
-          htmlDoc.querySelectorAll("script, style, head, nav").forEach(el => el.remove());
-          fullText += " " + (htmlDoc.body.innerText || htmlDoc.body.textContent || "");
-        }
-      }
-    }
-    return fullText.replace(/\s+/g, " ").trim();
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,9 +222,14 @@ const App = () => {
       const buffer = await file.arrayBuffer();
       let extractedText = "";
 
-      if (file.name.toLowerCase().endsWith('.epub')) {
+      const name = file.name.toLowerCase();
+      if (name.endsWith('.epub')) {
         extractedText = await parseEpub(buffer);
-      } else if (file.name.toLowerCase().endsWith('.json')) {
+      } else if (name.endsWith('.mobi')) {
+        extractedText = await parseMobi(buffer);
+      } else if (name.endsWith('.mobi.zip') || name.endsWith('.zip')) {
+        extractedText = await parseMobiZip(buffer);
+      } else if (name.endsWith('.json')) {
         const jsonContent = JSON.parse(decodeBuffer(buffer));
         if (jsonContent.type === 'swiftread_backup') {
           setText(jsonContent.text);
@@ -426,22 +392,41 @@ const App = () => {
         <div className="w-full max-w-4xl space-y-12">
           {/* Progress Section */}
           <div className="w-full">
-            <div className="flex justify-between items-end mb-4 px-1">
-              <div className="space-y-1">
+            <div className="flex flex-col sm:flex-row justify-between items-center sm:items-end mb-4 px-1 gap-4">
+              <div className="flex flex-col items-center sm:items-start space-y-1 w-full sm:w-1/3">
                 <span className="block text-[10px] text-slate-500 font-mono uppercase tracking-widest">{t.position}</span>
-                <span className="text-sm font-bold font-mono">
-                  {currentIndex} / {words.length} <span className="text-slate-500 font-normal">{t.words}</span>
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold font-mono whitespace-nowrap">
+                    {currentIndex} / {words.length} <span className="text-slate-500 font-normal">{t.words}</span>
+                  </span>
+                  
+                  {/* Jump Feature */}
+                  <form onSubmit={handleJump} className="flex items-center bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
+                    <div className="px-2 text-slate-600">
+                      <Hash size={12} />
+                    </div>
+                    <input 
+                      type="number" 
+                      placeholder="0"
+                      value={jumpInputValue}
+                      onChange={(e) => setJumpInputValue(e.target.value)}
+                      className="w-16 bg-transparent py-1 text-xs font-mono outline-none border-none text-slate-300 placeholder:text-slate-700"
+                    />
+                    <button type="submit" className="p-1.5 hover:bg-slate-800 text-rose-500 transition-colors">
+                      <ArrowRight size={12} />
+                    </button>
+                  </form>
+                </div>
               </div>
               
-              <div className="flex flex-col items-center space-y-1">
+              <div className="flex flex-col items-center space-y-1 w-full sm:w-1/3">
                  <div className="flex items-center gap-2 text-rose-400 bg-rose-500/10 px-3 py-1 rounded-full border border-rose-500/20">
                     <Clock size={12} />
                     <span className="text-[10px] font-bold font-mono uppercase tracking-tight whitespace-nowrap">{t.timeFinish}: {estimatedTimeRemaining}</span>
                  </div>
               </div>
 
-              <div className="text-right space-y-1">
+              <div className="flex flex-col items-center sm:items-end space-y-1 w-full sm:w-1/3">
                 <span className="block text-[10px] text-slate-500 font-mono uppercase tracking-widest">{t.progress}</span>
                 <span className="text-sm font-bold font-mono text-rose-400">{Math.round(progress)}%</span>
               </div>
@@ -586,7 +571,7 @@ const App = () => {
                   >
                     <input 
                       type="file" ref={fileInputRef} onChange={handleFileUpload}
-                      className="hidden" accept=".txt,.epub,.json"
+                      className="hidden" accept=".txt,.epub,.mobi,.zip,.json"
                     />
                     {isProcessing ? (
                       <Loader2 size={32} className="text-rose-500 animate-spin mb-4" />
@@ -611,7 +596,6 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* Wake Lock Status Indicator in Settings */}
                 <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Sun size={18} className={wakeLockSupported ? "text-yellow-500" : "text-slate-500"} />

@@ -17,7 +17,7 @@ export const TRANSLATIONS = {
     placeholder: "Vložte text ze schránky nebo začněte psát...",
     processing: "Zpracovávám soubor...",
     upload: "Nahrát soubor",
-    uploadFormats: "TXT, EPUB, JSON",
+    uploadFormats: "TXT, EPUB, MOBI, MOBI.ZIP, JSON",
     stats: "Statistiky",
     totalWords: "slov celkem",
     confirm: "Potvrdit a Začít Číst",
@@ -29,7 +29,7 @@ export const TRANSLATIONS = {
     export: "Exportovat data",
     import: "Importovat data",
     wakeLockActive: "Displej zůstane zapnutý",
-    initialText: "Vítejte v aplikaci SwiftRead Pro. Vložte svůj vlastní text nebo nahrajte soubor .txt nebo .epub a začněte trénovat rychločtení. Tato aplikace si pamatuje, kde jste naposledy skončili, i když zavřete prohlížeč. Rychlost si můžete nastavit od 50 slov za minutu. Rychločtení vám umožní absorbovat informace rychleji tím, že minimalizuje pohyby očí. Program zvýrazňuje fixační bod každého slova pro snazší čtení."
+    initialText: "Vítejte v aplikaci SwiftRead Pro. Vložte svůj vlastní text nebo nahrajte soubor .txt, .epub nebo .mobi a začněte trénovat rychločtení. Tato aplikace si pamatuje, kde jste naposledy skončili, i když zavřete prohlížeč. Rychlost si můžete nastavit od 50 slov za minutu. Rychločtení vám umožní absorbovat informace rychleji tím, že minimalizuje pohyby očí. Program zvýrazňuje fixační bod každého slova pro snazší čtení."
   },
   en: {
     subtitle: "Professional RSVP",
@@ -49,7 +49,7 @@ export const TRANSLATIONS = {
     placeholder: "Paste text from clipboard or start typing...",
     processing: "Processing file...",
     upload: "Upload file",
-    uploadFormats: "TXT, EPUB, JSON",
+    uploadFormats: "TXT, EPUB, MOBI, MOBI.ZIP, JSON",
     stats: "Statistics",
     totalWords: "total words",
     confirm: "Confirm & Start Reading",
@@ -61,6 +61,6 @@ export const TRANSLATIONS = {
     export: "Export data",
     import: "Import data",
     wakeLockActive: "Screen will stay on",
-    initialText: "Welcome to SwiftRead Pro. Paste your own text or upload a .txt or .epub file to start speed reading training. This app remembers where you left off, even if you close the browser. You can set the speed starting from 50 words per minute. Speed reading allows you to absorb information faster by minimizing eye movements. The program highlights the fixation point of each word for easier reading."
+    initialText: "Welcome to SwiftRead Pro. Paste your own text or upload a .txt, .epub or .mobi file to start speed reading training. This app remembers where you left off, even if you close the browser. You can set the speed starting from 50 words per minute. Speed reading allows you to absorb information faster by minimizing eye movements. The program highlights the fixation point of each word for easier reading."
   }
 };
