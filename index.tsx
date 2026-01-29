@@ -27,7 +27,9 @@ import {
   Type as TypeIcon,
   Sparkles,
   Key,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { TRANSLATIONS } from './translations';
@@ -39,7 +41,8 @@ const STORAGE_KEYS = {
   WPM: 'swiftread_wpm_v3',
   FONT_SIZE: 'swiftread_font_size_v3',
   LANG: 'swiftread_lang_v3',
-  UPPERCASE: 'swiftread_uppercase_v3'
+  UPPERCASE: 'swiftread_uppercase_v3',
+  API_KEY: 'swiftread_api_key_v3'
 };
 
 const App = () => {
@@ -58,7 +61,8 @@ const App = () => {
   const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
   const [wakeLockSupported, setWakeLockSupported] = useState<boolean>('wakeLock' in navigator);
   const [jumpInputValue, setJumpInputValue] = useState<string>('');
-  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
+  const [userApiKey, setUserApiKey] = useState<string>('');
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
 
   const t = TRANSLATIONS[lang];
   const timerRef = useRef<number | null>(null);
@@ -73,6 +77,7 @@ const App = () => {
     const savedWpm = parseInt(localStorage.getItem(STORAGE_KEYS.WPM) || '250', 10);
     const savedFontSize = parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '48', 10);
     const savedUppercase = localStorage.getItem(STORAGE_KEYS.UPPERCASE) === 'true';
+    const savedApiKey = localStorage.getItem(STORAGE_KEYS.API_KEY) || '';
 
     if (savedLang) setLang(savedLang);
     
@@ -83,15 +88,7 @@ const App = () => {
     setWpm(Math.min(1000, Math.max(50, savedWpm)));
     setFontSize(savedFontSize);
     setIsUppercase(savedUppercase);
-
-    // Kontrola API klíče
-    const checkKey = async () => {
-      if ((window as any).aistudio?.hasSelectedApiKey) {
-        const has = await (window as any).aistudio.hasSelectedApiKey();
-        setHasApiKey(has);
-      }
-    };
-    checkKey();
+    setUserApiKey(savedApiKey);
 
     if (!savedText) {
       setIsSetupOpen(true);
@@ -105,13 +102,7 @@ const App = () => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.WPM, wpm.toString()); }, [wpm]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FONT_SIZE, fontSize.toString()); }, [fontSize]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.UPPERCASE, isUppercase.toString()); }, [isUppercase]);
-
-  const handleOpenKeySelector = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setHasApiKey(true);
-    }
-  };
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.API_KEY, userApiKey); }, [userApiKey]);
 
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
@@ -289,11 +280,17 @@ const App = () => {
   };
 
   const handleAIGenerate = async () => {
+    const finalKey = userApiKey || process.env.API_KEY;
+    if (!finalKey) {
+      setErrorMsg(t.errorNoKey);
+      return;
+    }
     if (!tempText.trim()) return;
+
     setIsGeneratingAI(true);
     setErrorMsg(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: finalKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Vygeneruj souvislý a zajímavý text na téma: "${tempText}". 
@@ -306,12 +303,7 @@ const App = () => {
       }
     } catch (err: any) {
       console.error(err);
-      if (err.message?.includes("Requested entity was not found")) {
-        setHasApiKey(false);
-        handleOpenKeySelector();
-      } else {
-        setErrorMsg(t.aiError);
-      }
+      setErrorMsg(t.aiError);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -593,35 +585,48 @@ const App = () => {
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 custom-scrollbar">
               <div className="space-y-6">
                 
-                {/* API Key Management Section */}
-                <div className="p-6 bg-slate-800/30 border border-slate-800 rounded-3xl flex flex-col sm:flex-row items-center gap-6">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2 text-rose-400">
-                      <Key size={20} />
-                      <h3 className="font-bold uppercase tracking-tight text-sm">{t.apiKey}</h3>
+                {/* API Key Management Section (Manual Input) */}
+                <div className="p-6 bg-slate-800/30 border border-slate-800 rounded-3xl flex flex-col items-stretch gap-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-rose-400">
+                        <Key size={18} />
+                        <h3 className="font-bold uppercase tracking-tight text-xs">{t.apiKey}</h3>
+                      </div>
+                      <p className="text-[10px] text-slate-500">{t.apiKeyDesc}</p>
                     </div>
-                    <p className="text-xs text-slate-500">{t.apiKeyDesc}</p>
-                    <a 
-                      href="https://ai.google.dev/gemini-api/docs/billing" 
-                      target="_blank" 
-                      className="text-[10px] text-rose-400/60 hover:text-rose-400 flex items-center gap-1 transition-colors"
-                    >
-                      <ExternalLink size={10} />
-                      {t.billingDoc}
-                    </a>
-                  </div>
-                  <div className="flex flex-col gap-2 w-full sm:w-auto">
-                    <button 
-                      onClick={handleOpenKeySelector}
-                      className="px-6 py-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all"
-                    >
-                      {hasApiKey ? <Check size={18} className="text-emerald-500" /> : <Key size={18} />}
-                      {hasApiKey ? t.keyActive : t.setKey}
-                    </button>
-                    {hasApiKey && (
-                      <span className="text-[10px] text-center text-emerald-500/60 uppercase font-bold tracking-widest">{t.keyReady}</span>
+                    {userApiKey && (
+                      <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full border border-emerald-500/20">
+                        <Check size={12} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{t.keyActive}</span>
+                      </div>
                     )}
                   </div>
+                  
+                  <div className="relative group">
+                    <input 
+                      type={showApiKey ? "text" : "password"}
+                      value={userApiKey}
+                      onChange={(e) => setUserApiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 px-4 text-sm font-mono focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500/50 outline-none transition-all pr-12"
+                    />
+                    <button 
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-slate-300 transition-colors"
+                    >
+                      {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    className="text-[10px] text-rose-400/60 hover:text-rose-400 flex items-center gap-1 transition-colors self-start"
+                  >
+                    <ExternalLink size={10} />
+                    {t.billingDoc}
+                  </a>
                 </div>
 
                 <div className="relative group">
@@ -667,7 +672,7 @@ const App = () => {
                   </div>
                   <button 
                     onClick={handleAIGenerate}
-                    disabled={isGeneratingAI || !tempText.trim() || !hasApiKey}
+                    disabled={isGeneratingAI || !tempText.trim() || (!userApiKey && !process.env.API_KEY)}
                     className="w-full sm:w-auto px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-400 font-bold text-sm flex items-center justify-center gap-3 transition-all disabled:opacity-50"
                   >
                     {isGeneratingAI ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
