@@ -1,3 +1,4 @@
+
 import JSZip from 'jszip';
 
 /**
@@ -87,13 +88,15 @@ export const parseMobi = async (data: ArrayBuffer): Promise<string> => {
  */
 export const parseMobiZip = async (data: ArrayBuffer): Promise<string> => {
   const zip = await JSZip.loadAsync(data);
-  const mobiFile = Object.values(zip.files).find(file => file.name.toLowerCase().endsWith('.mobi'));
+  // Fix: Explicitly cast files to any[] to avoid 'unknown' type error when accessing 'name'
+  const mobiFile = (Object.values(zip.files) as any[]).find(file => file.name.toLowerCase().endsWith('.mobi'));
   
   if (!mobiFile) {
     throw new Error("No MOBI file found inside the ZIP archive.");
   }
 
-  const mobiBuffer = await mobiFile.async("arraybuffer");
+  // Fix: Explicitly cast to any to avoid 'unknown' type error when calling 'async'
+  const mobiBuffer = await (mobiFile as any).async("arraybuffer");
   return parseMobi(mobiBuffer);
 };
 

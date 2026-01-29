@@ -14,7 +14,7 @@ export const TRANSLATIONS = {
     editor: "Textový editor",
     clear: "Vymazat vše",
     paste: "Vložit",
-    placeholder: "Vložte text ze schránky nebo začněte psát...",
+    placeholder: "Vložte text ze schránky nebo začněte psát téma pro AI...",
     processing: "Zpracovávám soubor...",
     upload: "Nahrát soubor",
     uploadFormats: "TXT, EPUB, MOBI, MOBI.ZIP, JSON",
@@ -29,7 +29,13 @@ export const TRANSLATIONS = {
     export: "Exportovat data",
     import: "Importovat data",
     wakeLockActive: "Displej zůstane zapnutý",
-    initialText: "Vítejte v aplikaci SwiftRead Pro. Vložte svůj vlastní text nebo nahrajte soubor .txt, .epub nebo .mobi a začněte trénovat rychločtení. Tato aplikace si pamatuje, kde jste naposledy skončili, i když zavřete prohlížeč. Rychlost si můžete nastavit od 50 slov za minutu. Rychločtení vám umožní absorbovat informace rychleji tím, že minimalizuje pohyby očí. Program zvýrazňuje fixační bod každého slova pro snazší čtení."
+    initialText: "Vítejte v aplikaci SwiftRead Pro. Vložte svůj vlastní text nebo nahrajte soubor .txt, .epub nebo .mobi a začněte trénovat rychločtení. Tato aplikace si pamatuje, kde jste naposledy skončili, i když zavřete prohlížeč. Rychlost si můžete nastavit od 50 slov za minutu. Rychločtení vám umožní absorbovat informace rychleji tím, že minimalizuje pohyby očí. Program zvýrazňuje fixační bod každého slova pro snazší čtení.",
+    uppercaseMode: "Číst velkými písmeny",
+    uppercaseDesc: "Transformuje všechen text na kapitálky",
+    aiAssistant: "AI Generátor",
+    aiDescription: "Napište téma do editoru výše a nechte AI vygenerovat souvislý text pro čtení.",
+    aiImprove: "Generovat text pomocí AI",
+    aiError: "Při komunikaci s AI došlo k chybě.",
   },
   en: {
     subtitle: "Professional RSVP",
@@ -46,7 +52,7 @@ export const TRANSLATIONS = {
     editor: "Text Editor",
     clear: "Clear all",
     paste: "Paste",
-    placeholder: "Paste text from clipboard or start typing...",
+    placeholder: "Paste text from clipboard or start typing a topic for AI...",
     processing: "Processing file...",
     upload: "Upload file",
     uploadFormats: "TXT, EPUB, MOBI, MOBI.ZIP, JSON",
@@ -61,6 +67,12 @@ export const TRANSLATIONS = {
     export: "Export data",
     import: "Import data",
     wakeLockActive: "Screen will stay on",
-    initialText: "Welcome to SwiftRead Pro. Paste your own text or upload a .txt, .epub or .mobi file to start speed reading training. This app remembers where you left off, even if you close the browser. You can set the speed starting from 50 words per minute. Speed reading allows you to absorb information faster by minimizing eye movements. The program highlights the fixation point of each word for easier reading."
+    initialText: "Welcome to SwiftRead Pro. Paste your own text or upload a .txt, .epub or .mobi file to start speed reading training. This app remembers where you left off, even if you close the browser. You can set the speed starting from 50 words per minute. Speed reading allows you to absorb information faster by minimizing eye movements. The program highlights the fixation point of each word for easier reading.",
+    uppercaseMode: "Read in Uppercase",
+    uppercaseDesc: "Transform all text to capital letters",
+    aiAssistant: "AI Generator",
+    aiDescription: "Write a topic in the editor above and let AI generate a continuous text for reading.",
+    aiImprove: "Generate text with AI",
+    aiError: "An error occurred while communicating with AI.",
   }
 };

@@ -23,8 +23,11 @@ import {
   Sun,
   ShieldAlert,
   Hash,
-  ArrowRight
+  ArrowRight,
+  Type as TypeIcon,
+  Sparkles
 } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 import { TRANSLATIONS } from './translations';
 import { decodeBuffer, parseEpub, parseMobi, parseMobiZip } from './parsers';
 
@@ -33,7 +36,8 @@ const STORAGE_KEYS = {
   INDEX: 'swiftread_index_v3',
   WPM: 'swiftread_wpm_v3',
   FONT_SIZE: 'swiftread_font_size_v3',
-  LANG: 'swiftread_lang_v3'
+  LANG: 'swiftread_lang_v3',
+  UPPERCASE: 'swiftread_uppercase_v3'
 };
 
 const App = () => {
@@ -43,9 +47,11 @@ const App = () => {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [wpm, setWpm] = useState<number>(250);
   const [fontSize, setFontSize] = useState<number>(48);
+  const [isUppercase, setIsUppercase] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isSetupOpen, setIsSetupOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
   const [wakeLockSupported, setWakeLockSupported] = useState<boolean>('wakeLock' in navigator);
@@ -63,6 +69,7 @@ const App = () => {
     const savedIndex = parseInt(localStorage.getItem(STORAGE_KEYS.INDEX) || '0', 10);
     const savedWpm = parseInt(localStorage.getItem(STORAGE_KEYS.WPM) || '250', 10);
     const savedFontSize = parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '48', 10);
+    const savedUppercase = localStorage.getItem(STORAGE_KEYS.UPPERCASE) === 'true';
 
     if (savedLang) setLang(savedLang);
     
@@ -70,8 +77,9 @@ const App = () => {
     setText(initialContent);
     setTempText(initialContent);
     setCurrentIndex(savedIndex);
-    setWpm(Math.max(50, savedWpm));
+    setWpm(Math.min(1000, Math.max(50, savedWpm)));
     setFontSize(savedFontSize);
+    setIsUppercase(savedUppercase);
 
     if (!savedText) {
       setIsSetupOpen(true);
@@ -84,6 +92,7 @@ const App = () => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.INDEX, currentIndex.toString()); }, [currentIndex]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.WPM, wpm.toString()); }, [wpm]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FONT_SIZE, fontSize.toString()); }, [fontSize]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.UPPERCASE, isUppercase.toString()); }, [isUppercase]);
 
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
@@ -133,10 +142,12 @@ const App = () => {
   }, [isPlaying]);
 
   const words = useMemo(() => {
-    // Rozdělení textu a ošetření "slovo.slovo"
-    const processedText = text.replace(/([\p{L}\p{N}])\.([\p{L}\p{N}])/gu, '$1. $2');
+    let processedText = text.replace(/([\p{L}\p{N}])\.([\p{L}\p{N}])/gu, '$1. $2');
+    if (isUppercase) {
+      processedText = processedText.toUpperCase();
+    }
     return processedText.split(/\s+/).filter(w => w.length > 0);
-  }, [text]);
+  }, [text, isUppercase]);
 
   const estimatedTimeRemaining = useMemo(() => {
     const wordsLeft = Math.max(0, words.length - currentIndex);
@@ -258,6 +269,31 @@ const App = () => {
     }
   };
 
+  const handleAIGenerate = async () => {
+    if (!tempText.trim()) return;
+    setIsGeneratingAI(true);
+    setErrorMsg(null);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Upravený prompt pro čisté generování bez instrukcí k rychločtení
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Vygeneruj souvislý a zajímavý text na téma: "${tempText}". 
+        Text by měl být v jazyce: ${lang === 'cs' ? 'čeština' : 'angličtina'}. 
+        Generuj pouze samotný čistý text bez jakýchkoliv úvodních frází, nadpisů nebo závěrečných poznámek.`,
+      });
+      const generated = response.text;
+      if (generated) {
+        setTempText(generated.trim());
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(t.aiError);
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
   const handleExport = () => {
     const backupData = {
       type: 'swiftread_backup',
@@ -266,6 +302,7 @@ const App = () => {
       currentIndex: currentIndex,
       wpm: wpm,
       fontSize: fontSize,
+      isUppercase: isUppercase,
       timestamp: Date.now()
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -486,7 +523,7 @@ const App = () => {
                   <span className="text-xs font-bold font-mono text-rose-400">{wpm} WPM</span>
                 </div>
                 <input 
-                  type="range" min="50" max="1500" step="10" value={wpm}
+                  type="range" min="50" max="1000" step="10" value={wpm}
                   onChange={(e) => setWpm(parseInt(e.target.value))}
                   className="w-full h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-rose-500"
                 />
@@ -564,6 +601,25 @@ const App = () => {
                   </div>
                 )}
 
+                {/* AI Assistant Section */}
+                <div className="bg-slate-800/20 border border-slate-800 rounded-3xl p-6 flex flex-col sm:flex-row items-center gap-6">
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2 text-rose-400">
+                      <Sparkles size={20} />
+                      <h3 className="font-bold uppercase tracking-tight text-sm">{t.aiAssistant}</h3>
+                    </div>
+                    <p className="text-xs text-slate-500">{t.aiDescription}</p>
+                  </div>
+                  <button 
+                    onClick={handleAIGenerate}
+                    disabled={isGeneratingAI || !tempText.trim()}
+                    className="w-full sm:w-auto px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-400 font-bold text-sm flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+                  >
+                    {isGeneratingAI ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
+                    {t.aiImprove}
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div 
                     onClick={() => fileInputRef.current?.click()}
@@ -582,8 +638,8 @@ const App = () => {
                     <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">{t.uploadFormats}</span>
                   </div>
 
-                  <div className="flex flex-col justify-center p-8 bg-slate-800/30 border border-slate-800 rounded-3xl">
-                    <div className="flex items-center gap-3 text-slate-400 mb-4">
+                  <div className="flex flex-col justify-center gap-4 p-8 bg-slate-800/30 border border-slate-800 rounded-3xl">
+                    <div className="flex items-center gap-3 text-slate-400">
                       <FileText size={20} />
                       <span className="text-xs font-bold uppercase tracking-widest">{t.stats}</span>
                     </div>
@@ -596,26 +652,42 @@ const App = () => {
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Sun size={18} className={wakeLockSupported ? "text-yellow-500" : "text-slate-500"} />
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold uppercase tracking-tight">Prevence spánku</span>
-                      <span className="text-[10px] text-slate-500">Wake Lock API Status</span>
+                <div className="flex flex-col gap-4">
+                  {/* Uppercase Toggle */}
+                  <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700 flex items-center justify-between cursor-pointer group" onClick={() => setIsUppercase(!isUppercase)}>
+                    <div className="flex items-center gap-3">
+                      <TypeIcon size={18} className={isUppercase ? "text-rose-500" : "text-slate-500"} />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold uppercase tracking-tight">{t.uppercaseMode}</span>
+                        <span className="text-[10px] text-slate-500">{t.uppercaseDesc}</span>
+                      </div>
+                    </div>
+                    <div className={`w-12 h-6 rounded-full p-1 transition-colors ${isUppercase ? 'bg-rose-500' : 'bg-slate-700'}`}>
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isUppercase ? 'translate-x-6' : 'translate-x-0'}`}></div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {wakeLockSupported ? (
-                      <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg border border-emerald-500/20">
-                        <Check size={12} />
-                        <span className="text-[10px] font-bold uppercase">Podporováno</span>
+
+                  <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Sun size={18} className={wakeLockSupported ? "text-yellow-500" : "text-slate-500"} />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold uppercase tracking-tight">Prevence spánku</span>
+                        <span className="text-[10px] text-slate-500">Wake Lock API Status</span>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2 px-2 py-1 bg-rose-500/10 text-rose-500 rounded-lg border border-rose-500/20">
-                        <ShieldAlert size={12} />
-                        <span className="text-[10px] font-bold uppercase">Nepodporováno</span>
-                      </div>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {wakeLockSupported ? (
+                        <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg border border-emerald-500/20">
+                          <Check size={12} />
+                          <span className="text-[10px] font-bold uppercase">Podporováno</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-2 py-1 bg-rose-500/10 text-rose-500 rounded-lg border border-rose-500/20">
+                          <ShieldAlert size={12} />
+                          <span className="text-[10px] font-bold uppercase">Nepodporováno</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
