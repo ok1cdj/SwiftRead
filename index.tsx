@@ -25,7 +25,9 @@ import {
   Hash,
   ArrowRight,
   Type as TypeIcon,
-  Sparkles
+  Sparkles,
+  Key,
+  ExternalLink
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { TRANSLATIONS } from './translations';
@@ -56,6 +58,7 @@ const App = () => {
   const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
   const [wakeLockSupported, setWakeLockSupported] = useState<boolean>('wakeLock' in navigator);
   const [jumpInputValue, setJumpInputValue] = useState<string>('');
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
 
   const t = TRANSLATIONS[lang];
   const timerRef = useRef<number | null>(null);
@@ -81,6 +84,15 @@ const App = () => {
     setFontSize(savedFontSize);
     setIsUppercase(savedUppercase);
 
+    // Kontrola API klíče
+    const checkKey = async () => {
+      if ((window as any).aistudio?.hasSelectedApiKey) {
+        const has = await (window as any).aistudio.hasSelectedApiKey();
+        setHasApiKey(has);
+      }
+    };
+    checkKey();
+
     if (!savedText) {
       setIsSetupOpen(true);
     }
@@ -93,6 +105,13 @@ const App = () => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.WPM, wpm.toString()); }, [wpm]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FONT_SIZE, fontSize.toString()); }, [fontSize]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.UPPERCASE, isUppercase.toString()); }, [isUppercase]);
+
+  const handleOpenKeySelector = async () => {
+    if ((window as any).aistudio?.openSelectKey) {
+      await (window as any).aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
@@ -275,7 +294,6 @@ const App = () => {
     setErrorMsg(null);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Upravený prompt pro čisté generování bez instrukcí k rychločtení
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Vygeneruj souvislý a zajímavý text na téma: "${tempText}". 
@@ -286,9 +304,14 @@ const App = () => {
       if (generated) {
         setTempText(generated.trim());
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setErrorMsg(t.aiError);
+      if (err.message?.includes("Requested entity was not found")) {
+        setHasApiKey(false);
+        handleOpenKeySelector();
+      } else {
+        setErrorMsg(t.aiError);
+      }
     } finally {
       setIsGeneratingAI(false);
     }
@@ -569,6 +592,38 @@ const App = () => {
 
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 custom-scrollbar">
               <div className="space-y-6">
+                
+                {/* API Key Management Section */}
+                <div className="p-6 bg-slate-800/30 border border-slate-800 rounded-3xl flex flex-col sm:flex-row items-center gap-6">
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2 text-rose-400">
+                      <Key size={20} />
+                      <h3 className="font-bold uppercase tracking-tight text-sm">{t.apiKey}</h3>
+                    </div>
+                    <p className="text-xs text-slate-500">{t.apiKeyDesc}</p>
+                    <a 
+                      href="https://ai.google.dev/gemini-api/docs/billing" 
+                      target="_blank" 
+                      className="text-[10px] text-rose-400/60 hover:text-rose-400 flex items-center gap-1 transition-colors"
+                    >
+                      <ExternalLink size={10} />
+                      {t.billingDoc}
+                    </a>
+                  </div>
+                  <div className="flex flex-col gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={handleOpenKeySelector}
+                      className="px-6 py-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all"
+                    >
+                      {hasApiKey ? <Check size={18} className="text-emerald-500" /> : <Key size={18} />}
+                      {hasApiKey ? t.keyActive : t.setKey}
+                    </button>
+                    {hasApiKey && (
+                      <span className="text-[10px] text-center text-emerald-500/60 uppercase font-bold tracking-widest">{t.keyReady}</span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="relative group">
                   <textarea 
                     value={tempText}
@@ -612,7 +667,7 @@ const App = () => {
                   </div>
                   <button 
                     onClick={handleAIGenerate}
-                    disabled={isGeneratingAI || !tempText.trim()}
+                    disabled={isGeneratingAI || !tempText.trim() || !hasApiKey}
                     className="w-full sm:w-auto px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-400 font-bold text-sm flex items-center justify-center gap-3 transition-all disabled:opacity-50"
                   >
                     {isGeneratingAI ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}

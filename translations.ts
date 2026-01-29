@@ -36,6 +36,12 @@ export const TRANSLATIONS = {
     aiDescription: "Napište téma do editoru výše a nechte AI vygenerovat souvislý text pro čtení.",
     aiImprove: "Generovat text pomocí AI",
     aiError: "Při komunikaci s AI došlo k chybě.",
+    apiKey: "Gemini API Klíč",
+    apiKeyDesc: "Pro generování textu je vyžadován API klíč z Google Cloud Console.",
+    setKey: "Nastavit/Změnit API klíč",
+    keyActive: "Klíč je připojen",
+    keyReady: "AI funkce jsou připraveny k použití",
+    billingDoc: "Více informací o fakturaci a klíčích",
   },
   en: {
     subtitle: "Professional RSVP",
@@ -74,5 +80,11 @@ export const TRANSLATIONS = {
     aiDescription: "Write a topic in the editor above and let AI generate a continuous text for reading.",
     aiImprove: "Generate text with AI",
     aiError: "An error occurred while communicating with AI.",
+    apiKey: "Gemini API Key",
+    apiKeyDesc: "An API key from Google Cloud Console is required for AI features.",
+    setKey: "Set/Change API Key",
+    keyActive: "Key is active",
+    keyReady: "AI features are ready to use",
+    billingDoc: "Learn more about billing and keys",
   }
 };
